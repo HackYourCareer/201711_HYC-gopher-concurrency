@@ -25,12 +25,28 @@ func NewBucket(maxTokens int) *Bucket {
 
 func (b *Bucket) Refill(count int) {
 	// TODO
+	for i := 0; i < count; i++ {
+		select {
+		case b.tokens <- Token{}:
+		default:
+			return
+		}
+	}
 }
 
 func (b *Bucket) TryGet(timeout time.Duration) chan bool {
 	b.lastUsed = time.Now()
 	out := make(chan bool)
-	// TODO
+
+	go func() {
+		select {
+		case <-b.tokens:
+			out <- true
+		case <-time.After(timeout):
+			out <- false
+		}
+	}()
+
 	return out
 }
 
@@ -47,7 +63,7 @@ func WithCustomTimeAfter(timeAfter TimeAfter) LeakyBucketLimiterOption {
 func NewLeakyBucketLimiter(totalTokens int, maxTokensPerClient int, refillPeriod time.Duration, maxInactiveClientTime time.Duration, ops ...LeakyBucketLimiterOption) *LeakyBucketLimiter {
 	limiter := &LeakyBucketLimiter{
 		clients:               make(map[ClientID]*Bucket),
-		refillPeriod:            refillPeriod,
+		refillPeriod:          refillPeriod,
 		totalTokens:           totalTokens,
 		maxTokensPerClient:    maxTokensPerClient,
 		maxInactiveClientTime: maxInactiveClientTime,
@@ -62,7 +78,7 @@ func NewLeakyBucketLimiter(totalTokens int, maxTokensPerClient int, refillPeriod
 type LeakyBucketLimiter struct {
 	mtx                   sync.Mutex
 	clients               map[ClientID]*Bucket
-	refillPeriod            time.Duration
+	refillPeriod          time.Duration
 	maxInactiveClientTime time.Duration
 	totalTokens           int
 	maxTokensPerClient    int
@@ -86,6 +102,13 @@ func (limiter *LeakyBucketLimiter) Start() {
 
 func (limiter *LeakyBucketLimiter) removeInactiveClients() {
 	// TODO
+	limiter.mtx.Lock()
+	defer limiter.mtx.Unlock()
+	for client, bucket := range limiter.clients {
+		if time.Since(bucket.lastUsed) > limiter.maxInactiveClientTime {
+			delete(limiter.clients, client)
+		}
+	}
 }
 
 func (limiter *LeakyBucketLimiter) distributeTokens() {
