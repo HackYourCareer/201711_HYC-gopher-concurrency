@@ -63,6 +63,7 @@ func init() {
 			*maxConcurrentConnections, *maxConnectionPerUser, *timeout, *refillPeriod, *maxInactiveClientTime)
 		bucketLimiter := limiter.NewLeakyBucketLimiter(*maxConcurrentConnections, *maxConnectionPerUser, *refillPeriod, *maxInactiveClientTime)
 		// TODO start bucket limiter
+		go bucketLimiter.Start()
 		concreteMiddleware = middleware.NewLeakyBucketLimiterMiddleware(bucketLimiter, *timeout)
 
 	default:
